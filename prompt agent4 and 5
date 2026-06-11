@@ -1,0 +1,300 @@
+Backend Contract Summary for UI Integration
+
+The UI calls one endpoint:
+
+POST /api/agent/ask
+
+Request:
+
+{
+  "message": "string",
+  "userId": "user001",
+  "sessionId": "recon-demo-session"
+}
+
+Response must always follow:
+
+{
+  "answer": "human readable AI answer",
+  "userId": "user001",
+  "sessionId": "recon-demo-session",
+  "toolCalls": [
+    {
+      "toolName": "tool name",
+      "toolResponse": {
+        "result": {}
+      }
+    }
+  ]
+}
+
+The UI uses:
+
+answer = top narrative card
+toolCalls[0].toolResponse.result = structured UI data
+
+If only answer is returned and no tool data exists, UI shows a generic AI Answer screen.
+
+Agent 4 — Incident / Resolve
+
+Triggered by questions like:
+
+What should I do next for PELIX?
+Resolve PELIX failure
+Draft RCA for PELIX
+Have we seen this before?
+
+Expected tool name:
+
+resolveIncidentByReconId
+Required response shape
+{
+  "answer": "PELIX failed in PRE_PROCESSING due to schema validation. Recommended action is to validate the AccountBalance file schema and rerun PRE_PROCESSING.",
+  "userId": "user001",
+  "sessionId": "recon-demo-session",
+  "toolCalls": [
+    {
+      "toolName": "resolveIncidentByReconId",
+      "toolResponse": {
+        "result": {
+          "available": true,
+          "reasonIfUnavailable": null,
+
+          "reconId": "PELIX",
+          "executionId": "db5c32e3-e8b9-41af-9baa-175d52980e5b",
+          "overallStatus": "FAILED",
+
+          "failedStageType": "PRE_PROCESSING",
+          "failedStageName": "PRE_PROCESSING",
+          "failedTaskId": "PRE_MATCH_R",
+          "failedTaskName": "PRE_MATCH_R",
+
+          "errorSignature": "Schema validation failed for AccountBalance input file",
+          "likelyCauseCategory": "SCHEMA_VALIDATION_FAILURE",
+
+          "confidence": 87,
+
+          "evidence": [
+            {
+              "source": "EXEC_SERVER",
+              "field": "failedTaskName",
+              "value": "PRE_MATCH_R"
+            },
+            {
+              "source": "INFO_SERVER",
+              "field": "fileName",
+              "value": "AU_SL_3586_AccountBalance_20260320_123888.csv"
+            }
+          ],
+
+          "recommendedNextSteps": [
+            "Validate AccountBalance file schema.",
+            "Fix schema issues if any.",
+            "Re-run PRE_PROCESSING stage."
+          ],
+
+          "owner": {
+            "team": "Recon Platform",
+            "contact": "recon-platform@jpmchase.net"
+          },
+
+          "similarIncidents": [
+            {
+              "id": "INC-20260604-1523",
+              "title": "Schema mismatch in PRE_MATCH_R",
+              "occurredOn": "2026-06-04T10:21:00Z",
+              "resolution": "Fixed schema and re-ran PRE_PROCESSING",
+              "outcome": "Resolved"
+            }
+          ],
+
+          "rcaDraft": {
+            "summary": "PELIX failed during PRE_PROCESSING because AccountBalance schema validation failed.",
+            "impact": "MATCH stage was blocked and downstream stages were delayed.",
+            "timeline": [
+              "Input file received.",
+              "PRE_PROCESSING started.",
+              "PRE_MATCH_R failed validation.",
+              "MATCH did not start."
+            ],
+            "rootCause": "Input file schema did not match expected AccountBalance schema.",
+            "fix": "Validate and correct raw file schema, then rerun PRE_PROCESSING.",
+            "prevention": "Add schema drift check before PRE_MATCH_R execution."
+          }
+        }
+      }
+    }
+  ]
+}
+UI mapping
+Backend field	UI usage
+answer	Top card: Recommended Resolution
+confidence	Confidence badge/gauge
+likelyCauseCategory	Likely Cause card
+errorSignature	Why / error signature text
+recommendedNextSteps[]	Ordered action list
+owner.team / owner.contact	Owner card
+similarIncidents[]	Similar Incidents table
+evidence[]	Evidence section; hide if empty
+rcaDraft	RCA summary section
+Important UI rules
+If evidence is empty or null, UI hides the evidence button/section.
+If similarIncidents is empty, UI shows “No similar incidents returned.”
+owner must be rendered as fields, not as raw object.
+confidence color:
+0–30: red
+31–70: amber
+71–100: green
+occurredOn should be ISO format if available.
+Do not return placeholder strings like "string|null".
+Agent 5 — Cost
+
+Triggered by questions like:
+
+Show cost by recon and stage
+What is driving compute cost?
+Cost visibility for today
+Cost for PELIX
+
+Expected tool name:
+
+getCostReport
+Required response shape
+{
+  "answer": "Cost report is available. Total cost is USD 1248.72; the largest anomaly is runtime-driven cost in PRE_PROCESSING.",
+  "userId": "user001",
+  "sessionId": "recon-demo-session",
+  "toolCalls": [
+    {
+      "toolName": "getCostReport",
+      "toolResponse": {
+        "result": {
+          "available": true,
+          "reasonIfUnavailable": null,
+
+          "date": "2026-06-12",
+          "reconId": null,
+          "executionId": null,
+          "currency": "USD",
+
+          "totalCost": 1248.72,
+
+          "costByStage": [
+            {
+              "stageType": "PRE_PROCESSING",
+              "estimatedCost": 520.4,
+              "runtimeSec": 138
+            },
+            {
+              "stageType": "MATCH",
+              "estimatedCost": 310.1,
+              "runtimeSec": 0
+            },
+            {
+              "stageType": "POST_MATCH",
+              "estimatedCost": 180.25,
+              "runtimeSec": 0
+            },
+            {
+              "stageType": "METRICS",
+              "estimatedCost": 148.0,
+              "runtimeSec": 0
+            },
+            {
+              "stageType": "REPORT",
+              "estimatedCost": 89.97,
+              "runtimeSec": 0
+            }
+          ],
+
+          "costByRecon": [
+            {
+              "reconId": "PELIX",
+              "executionId": "db5c32e3-e8b9-41af-9baa-175d52980e5b",
+              "estimatedCost": 520.4
+            },
+            {
+              "reconId": "MS_DDIP_REC_0756",
+              "executionId": "f8e7e64b-85d7-49fc-b79d-2a16808a4364",
+              "estimatedCost": 311.2
+            },
+            {
+              "reconId": "MS_DTMSETT_REC_0756",
+              "executionId": "1194095c-7ae7-4c94-8b43-b13fdf83a334",
+              "estimatedCost": 226.1
+            }
+          ],
+
+          "costAnomalies": [
+            {
+              "type": "LONG_RUNTIME_COST",
+              "severity": "HIGH",
+              "actual": "$520.40",
+              "baseline": "$225.00",
+              "evidence": "PRE_PROCESSING cost is 2.3x normal due to extended compute runtime and retry behavior."
+            }
+          ],
+
+          "charts": [
+            {
+              "chartType": "bar",
+              "title": "Estimated Cost by Stage",
+              "x": [
+                "PRE_PROCESSING",
+                "MATCH",
+                "POST_MATCH",
+                "METRICS",
+                "REPORT"
+              ],
+              "series": [
+                {
+                  "name": "Estimated Cost",
+                  "data": [
+                    520.4,
+                    310.1,
+                    180.25,
+                    148.0,
+                    89.97
+                  ]
+                }
+              ],
+              "meta": {
+                "currency": "USD"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+UI mapping
+Backend field	UI usage
+answer	Top card: Cost Analysis
+date	Business date
+currency	Currency display
+totalCost	Total Cost KPI
+costByStage[]	Cost by Stage chart
+costByRecon[]	Cost by Recon chart/table
+costAnomalies[]	Cost Anomalies cards
+charts[]	Optional chart rendering
+Important UI rules
+If reconId is null, UI treats it as day-level cost report.
+If reconId is populated, UI treats it as single recon cost report.
+UI does not currently use “cost per successful recon” unless backend provides a supported field.
+Do not return zero cost unless truly unavailable.
+If cost data is unavailable, return:
+{
+  "available": false,
+  "reasonIfUnavailable": "Cost data not available for this business date"
+}
+General Rules for Both Agents
+Always return a meaningful answer.
+Keep answer concise, operational, and human readable.
+toolResponse.result must contain structured data for UI.
+Avoid placeholder strings like "string" or "uuid".
+Dates should be ISO-8601 UTC.
+Arrays can be empty, but do not omit required top-level fields.
+If no tool is called, return only answer; UI will show the generic AI Answer screen.
+toolResponse may be either an object or escaped JSON string, but object is preferred.
+Avoid frontend-derived narratives. Backend should provide facts, evidence, and recommendation text.
