@@ -1,0 +1,301 @@
+package com.example.recontower;
+
+import org.springframework.web.bind.annotation.*;
+import java.util.*;
+
+@RestController
+@RequestMapping("/api/agent")
+@CrossOrigin(origins = {"http://localhost:3000", "http://127.0.0.1:3000"})
+public class AgentController {
+
+    @PostMapping("/ask")
+    public Map<String, Object> ask(@RequestBody AskRequest request) {
+        String message = Optional.ofNullable(request.message()).orElse("");
+        String text = message.toLowerCase(Locale.ROOT);
+        String toolName;
+        Map<String, Object> result;
+        String answer;
+
+        if (text.contains("cost")) {
+            toolName = "getCostReport";
+            result = getCostReport(message);
+            answer = "Cost report is available. Total cost is USD " + result.get("totalCost") + "; the largest anomaly is runtime-driven cost in PRE_PROCESSING.";
+        } else if (text.contains("anomal")) {
+            toolName = "detectAnomaliesByReconId";
+            result = detectAnomaliesByReconId(resolveReconId(text));
+            answer = "Detected three anomalies for " + result.get("reconId") + ": runtime above p90, match count below baseline, and record count variance.";
+        } else if (text.contains("resolve") || text.contains("what should") || text.contains("next") || text.contains("rca")) {
+            toolName = "resolveIncidentByReconId";
+            result = resolveIncidentByReconId(resolveReconId(text));
+            answer = "Likely cause is schema validation failure in PRE_MATCH_R. Recommended next step is to validate AccountBalance schema and re-run PRE_PROCESSING.";
+        } else if (text.contains("sla") || text.contains("eta") || text.contains("breach") || text.contains("predict")) {
+            toolName = "predictEtaAndRiskByReconId";
+            result = predictEtaAndRiskByReconId(resolveReconId(text));
+            answer = result.get("reconId") + " has " + result.get("riskLevel") + " SLA risk. p90 ETA is " + result.get("etaIsoP90") + ".";
+        } else if (text.contains("where") || text.contains("right now") || text.contains("detail") || text.contains("status") || text.contains("helix") || text.contains("dtmsett")) {
+            toolName = "getPipelineStatusByReconId";
+            result = getPipelineStatusByReconId(resolveReconId(text));
+            answer = "The reconciliation pipeline for **" + result.get("identifier") + "** is currently **" + result.get("overallStatus") + "**.";
+        } else {
+            toolName = "getDailySummary";
+            result = getDailySummary();
+            answer = "On June 10, 2026: Total 5 recons (1 completed, 3 in progress, 4 failed). Overall progress 53.7%.";
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("answer", answer);
+        response.put("userId", Optional.ofNullable(request.userId()).orElse("user001"));
+        response.put("sessionId", Optional.ofNullable(request.sessionId()).orElse("recon-demo-session"));
+        response.put("toolCalls", List.of(toolCall(toolName, result)));
+        return response;
+    }
+
+    private String resolveReconId(String text) {
+        if (text.contains("ms_dtmsett") || text.contains("dtmsett")) return "MS_DTMSETT_REC_0756";
+        if (text.contains("ms_ddip") || text.contains("ddip")) return "MS_DDIP_REC_0756";
+        return "PELIX";
+    }
+
+    private Map<String, Object> toolCall(String name, Map<String, Object> result) {
+        Map<String, Object> toolResponse = new LinkedHashMap<>();
+        toolResponse.put("result", result);
+        Map<String, Object> call = new LinkedHashMap<>();
+        call.put("toolName", name);
+        call.put("toolResponse", toolResponse);
+        return call;
+    }
+
+    private Map<String, Object> getDailySummary() {
+        List<Map<String, Object>> recons = List.of(
+            reconRow("db5c32e3-e8b9-41af-9baa-175d52980e5b", "PELIX", "FAILED", 0.0, "2026-06-12T14:10:00Z", null, "-", "PRE_PROCESSING"),
+            reconRow("f8e7e64b-85d7-49fc-b79d-2a16808a4364", "MS_DDIP_REC_0756", "FAILED", 42.9, "2026-06-12T12:24:56Z", "2026-06-12T12:28:48Z", "3m 51s", "PRE_PROCESSING"),
+            reconRow("1194095c-7ae7-4c94-8b43-b13fdf83a334", "MS_DTMSETT_REC_0756", "IN_PROGRESS", 64.3, "2026-06-12T12:24:42Z", null, "-", "MATCH"),
+            reconRow("abc-001", "ABC_RECON_123", "IN_PROGRESS", 78.3, "2026-06-12T13:40:12Z", null, "-", "MATCH"),
+            reconRow("xyz-001", "XYZ_RECON_001", "IN_PROGRESS", 61.2, "2026-06-12T13:15:20Z", null, "-", "POST_MATCH"),
+            reconRow("pqr-789", "PQR_RECON_789", "COMPLETED", 100.0, "2026-06-12T09:10:05Z", "2026-06-12T09:45:22Z", "35m 17s", "REPORT"),
+            reconRow("cash-004", "CASH_POSITION_RECON", "FAILED", 22.0, "2026-06-12T10:10:00Z", null, "-", "MATCH"),
+            reconRow("client-006", "CLIENT_BALANCE_RECON", "FAILED", 18.0, "2026-06-12T10:42:00Z", null, "-", "PRE_PROCESSING")
+        );
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("date", "2026-06-12");
+        result.put("tableName", "exec-server-core");
+        result.put("generatedAt", "2026-06-12T17:59:12.679729300Z");
+        result.put("totalRecons", 8);
+        result.put("completedCount", 1);
+        result.put("inProgressCount", 3);
+        result.put("failedCount", 4);
+        result.put("otherCount", 0);
+        result.put("overallProgress", 53.7);
+        result.put("recons", recons);
+        result.put("charts", List.of(
+            chart("bar", "Recon Status Counts (2026-06-12)", List.of("COMPLETED", "FAILED", "IN_PROGRESS", "OTHER"), List.of(series("Count", List.of(1, 4, 3, 0))), Map.of("generatedAt", "2026-06-12T17:59:12Z")),
+            chart("bar", "Recon Progress (2026-06-12)", List.of("PELIX", "MS_DDIP_REC_0756", "MS_DTMSETT_REC_0756"), List.of(series("Progress %", List.of(0, 42.9, 64.3))), Map.of("status", List.of("FAILED", "FAILED", "IN_PROGRESS")))
+        ));
+        return result;
+    }
+
+    private Map<String, Object> getPipelineStatusByReconId(String reconId) {
+        boolean running = reconId.equals("PELIX");
+        String status = running ? "IN_PROGRESS" : "FAILED";
+        double progress = running ? 64.3 : 0.0;
+        String executionId = running ? "1194095c-7ae7-4c94-8b43-b13fdf83a334" : "db5c32e3-e8b9-41af-9baa-175d52980e5b";
+        List<Map<String, Object>> stages = running ? runningStages(reconId) : failedStages();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("executionId", executionId);
+        result.put("identifier", reconId);
+        result.put("overallStatus", status);
+        result.put("progress", progress);
+        result.put("startTime", running ? "2026-06-12T12:24:42.678008624Z" : "2026-06-12T14:10:00.431827247Z");
+        result.put("endTime", null);
+        result.put("workflowType", "RECON_EXECUTION");
+        result.put("isLatest", true);
+        result.put("nodes", stageNodes(reconId, running));
+        result.put("stages", stages);
+        result.put("filesReceived", List.of(file(running)));
+        result.put("completed", !running && false);
+        result.put("charts", List.of(chart("gantt", "Stage Timeline - " + reconId,
+            stages.stream().map(s -> s.get("name")).toList(),
+            List.of(series("Stages", stages.stream().map(s -> Map.of("label", s.get("name"), "startMs", 0, "endMs", 0, "status", s.get("status"), "type", s.get("type"))).toList())),
+            Map.of("executionId", executionId, "overallStatus", status, "progress", progress)
+        )));
+        return result;
+    }
+
+    private Map<String, Object> predictEtaAndRiskByReconId(String reconId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("available", true);
+        result.put("reasonIfUnavailable", null);
+        result.put("reconId", reconId);
+        result.put("executionId", "db5c32e3-e8b9-41af-9baa-175d52980e5b");
+        result.put("overallStatus", "FAILED");
+        result.put("currentStageType", "PRE_PROCESSING");
+        result.put("currentStageName", "PELIX_PRE_PROCESSING");
+        result.put("currentStageStartTime", "2026-06-12T14:10:00.431827247Z");
+        result.put("slaSec", 5400);
+        result.put("remainingP50Sec", 2520);
+        result.put("remainingP90Sec", 4800);
+        result.put("etaIsoP50", "2026-06-12T15:42:00Z");
+        result.put("etaIsoP90", "2026-06-12T16:20:00Z");
+        result.put("riskLevel", "HIGH");
+        result.put("predictedSlaBreachP50", true);
+        result.put("predictedSlaBreachP90", true);
+        result.put("reasons", List.of("PRE_PROCESSING failed and downstream stages have not started.", "Similar failures took 2h 10m p90 to recover.", "No owner action has been recorded yet."));
+        result.put("charts", List.of(chart("bar", "Remaining Seconds by Stage", List.of("PRE_PROCESSING", "MATCH", "POST_MATCH", "METRICS", "REPORT"), List.of(series("Remaining sec (p50)", List.of(1200, 1680, 720, 480, 300)), series("Remaining sec (p90)", List.of(2700, 3300, 1500, 1080, 720))), Map.of("executionId", result.get("executionId"), "riskLevel", "HIGH", "slaSec", 5400))));
+        return result;
+    }
+
+    private Map<String, Object> detectAnomaliesByReconId(String reconId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("available", true);
+        result.put("reasonIfUnavailable", null);
+        result.put("reconId", reconId);
+        result.put("executionId", "db5c32e3-e8b9-41af-9baa-175d52980e5b");
+        result.put("overallStatus", "FAILED");
+        result.put("anomalies", List.of(
+            anomaly("STAGE_DURATION", "HIGH", "PRE_PROCESSING", "138 sec", "60 sec", "PRE_PROCESSING runtime is 2.3x the p90 baseline."),
+            anomaly("MATCH_COUNT", "MED", "MATCH", "0", "Expected > 0", "MATCH has not started because PRE_PROCESSING failed."),
+            anomaly("RECORD_COUNT", "LOW", "PRE_PROCESSING", "118% of baseline", "100%", "Input AccountBalance file is above normal band.")
+        ));
+        result.put("charts", List.of(chart("bar", "Stage Duration vs p90", List.of("PRE_PROCESSING", "MATCH"), List.of(series("Actual sec", List.of(138, 0)), series("p90 sec", List.of(60, 45))), Map.of("executionId", result.get("executionId"), "infoServerAvailable", true))));
+        return result;
+    }
+
+    private Map<String, Object> resolveIncidentByReconId(String reconId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("available", true);
+        result.put("reasonIfUnavailable", null);
+        result.put("reconId", reconId);
+        result.put("executionId", "db5c32e3-e8b9-41af-9baa-175d52980e5b");
+        result.put("overallStatus", "FAILED");
+        result.put("failedStageType", "PRE_PROCESSING");
+        result.put("failedStageName", "PELIX");
+        result.put("failedTaskId", "PRE_MATCH_R");
+        result.put("failedTaskName", "PRE_MATCH_R");
+        result.put("errorSignature", "AccountBalance schema validation failed: missing expected column mapping.");
+        result.put("evidence", List.of(evidence("EXEC_SERVER", "stage", "PRE_PROCESSING"), evidence("INFO_SERVER", "task", "PRE_MATCH_R"), evidence("EXEC_SERVER", "file", "AU_SL_3586_AccountBalance_20260320_123888.csv")));
+        result.put("likelyCauseCategory", "Schema validation failure");
+        result.put("recommendedNextSteps", List.of("Validate AccountBalance file schema.", "Fix schema mapping or missing column issue if confirmed.", "Re-run PRE_PROCESSING stage."));
+        result.put("owner", Map.of("team", "Recon Platform Team", "contact", "recon-platform@jpmchase.com"));
+        result.put("similarIncidents", List.of(
+            Map.of("id", "INC-20260604-1523", "title", "Schema mismatch in PRE_MATCH_R", "resolution", "Fixed schema and re-run"),
+            Map.of("id", "INC-20260528-0911", "title", "Missing column in AccountBalance", "resolution", "Added column mapping"),
+            Map.of("id", "INC-20260515-1742", "title", "Data type mismatch in PRE_MATCH_R", "resolution", "Corrected data type")
+        ));
+        result.put("rcaDraft", Map.of("summary", "PELIX failed during PRE_PROCESSING.", "impact", "MATCH stage is blocked and downstream stages are delayed.", "timeline", List.of("14:09 file received", "14:10 PRE_PROCESSING started", "14:10 PRE_MATCH_R failed"), "rootCause", "Schema validation failure", "fix", "Validate schema and rerun PRE_PROCESSING", "prevention", "Add pre-run schema validation alert"));
+        return result;
+    }
+
+    private Map<String, Object> getCostReport(String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("available", true);
+        result.put("reasonIfUnavailable", null);
+        result.put("date", "2026-06-11");
+        result.put("reconId", "PELIX");
+        result.put("executionId", "db5c32e3-e8b9-41af-9baa-175d52980e5b");
+        result.put("currency", "USD");
+        result.put("totalCost", 1248.72);
+        result.put("costByStage", List.of(
+            costStage("PRE_PROCESSING", 520.40, 138),
+            costStage("MATCH", 310.10, 0),
+            costStage("POST_MATCH", 180.25, 0),
+            costStage("METRICS", 148.00, 0),
+            costStage("REPORT", 89.97, 0)
+        ));
+        result.put("costByRecon", List.of(
+            Map.of("reconId", "PELIX", "executionId", "db5c32e3-e8b9-41af-9baa-175d52980e5b", "estimatedCost", 520.40),
+            Map.of("reconId", "MS_DDIP_REC_0756", "executionId", "f8e7e64b-85d7-49fc-b79d-2a16808a4364", "estimatedCost", 311.20),
+            Map.of("reconId", "MS_DTMSETT_REC_0756", "executionId", "1194095c-7ae7-4c94-8b43-b13fdf83a334", "estimatedCost", 226.10)
+        ));
+        result.put("costAnomalies", List.of(Map.of("type", "LONG_RUNTIME_COST", "severity", "HIGH", "actual", "$520.40", "baseline", "$225.00", "evidence", "PRE_PROCESSING cost is 2.3x normal due to extended compute runtime and retry behavior.")));
+        result.put("charts", List.of(chart("bar", "Estimated Cost by Stage", List.of("PRE_PROCESSING", "MATCH", "POST_MATCH", "METRICS", "REPORT"), List.of(series("Estimated Cost", List.of(520.40, 310.10, 180.25, 148.00, 89.97))), Map.of("currency", "USD"))));
+        return result;
+    }
+
+    private List<Map<String, Object>> failedStages() {
+        return List.of(
+            stage("1", "PELIX_PRE_PROCESSING", "PRE_PROCESSING", "FAILED", "2026-06-12T14:10:00.431827247Z", "2026-06-12T14:10:37.415148977Z", 2, 0, 0),
+            stage("2", "MATCH", "MATCH", "NOT_STARTED", null, null, 1, 0, 0),
+            stage("3", "GeneratePostmatch", "POST_MATCH", "NOT_STARTED", null, null, 1, 0, 0),
+            stage("4", "GenerateMetrics", "METRICS", "NOT_STARTED", null, null, 1, 0, 0),
+            stage("6", "GenerateReport", "REPORT", "NOT_STARTED", null, null, 1, 0, 0)
+        );
+    }
+
+    private List<Map<String, Object>> runningStages(String reconId) {
+        return List.of(
+            stage("1", reconId + "_PRE_PROCESSING", "PRE_PROCESSING", "COMPLETED", "2026-06-12T12:24:06.018975994Z", "2026-06-12T12:32:09.041309143Z", 2, 2, 0),
+            stage("2", "MATCH", "MATCH", "IN_PROGRESS", "2026-06-12T12:32:11Z", null, 1, 0, 1),
+            stage("3", "GeneratePostmatch", "POST_MATCH", "NOT_STARTED", null, null, 1, 0, 0),
+            stage("4", "GenerateMetrics", "METRICS", "NOT_STARTED", null, null, 1, 0, 0),
+            stage("6", "GenerateReport", "REPORT", "NOT_STARTED", null, null, 1, 0, 0)
+        );
+    }
+
+    private List<Map<String, Object>> stageNodes(String reconId, boolean running) {
+        String file = running ? "NA_SL_0756_AccountBalance_20260605_042007.csv" : "AU_SL_3586_AccountBalance_20260320_123888.csv";
+        return List.of(
+            node("1", "STAGE", reconId + "_PRE_PROCESSING", "PRE_PROCESSING", running ? "COMPLETED" : "FAILED", "2026-06-12T14:10:00.431827247Z", running ? "2026-06-12T12:32:09.041309143Z" : "2026-06-12T14:10:37.415148977Z", null, null),
+            node("1.1", "ENTITY", "Entity_AccountBalance_LHS", null, running ? "COMPLETED" : "FAILED", "2026-06-12T14:10:00.431827247Z", "2026-06-12T14:10:37.415148977Z", null, null),
+            node("1.1.1", "PIPELINE", "GROUP_AccountBalance_L", null, running ? "COMPLETED" : "FAILED", "2026-06-12T14:10:00.431827247Z", "2026-06-12T14:10:37.415148977Z", file, "LHS"),
+            node("1.1.1.1", "TASK", "PRE_MATCH_L", "PRE_MATCH", running ? "COMPLETED" : "FAILED", "2026-06-12T14:10:00.431827247Z", "2026-06-12T14:10:37.415148977Z", file, "LHS"),
+            node("2", "STAGE", "MATCH", "MATCH", running ? "IN_PROGRESS" : "NOT_STARTED", running ? "2026-06-12T12:32:11Z" : null, null, null, null)
+        );
+    }
+
+    private Map<String, Object> reconRow(String executionId, String identifier, String status, double progress, String startTime, String endTime, String duration, String currentStage) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("executionId", executionId); row.put("identifier", identifier); row.put("status", status); row.put("progress", progress);
+        row.put("startTime", startTime); row.put("endTime", endTime); row.put("duration", duration); row.put("currentStage", currentStage); row.put("owner", "Recon Platform");
+        return row;
+    }
+
+    private Map<String, Object> stage(String id, String name, String type, String status, String startTime, String endTime, int totalTasks, int completedTasks, int inProgressTasks) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("stageId", id); s.put("name", name); s.put("type", type); s.put("status", status); s.put("startTime", startTime); s.put("endTime", endTime);
+        s.put("totalTasks", totalTasks); s.put("completedTasks", completedTasks); s.put("inProgressTasks", inProgressTasks);
+        return s;
+    }
+
+    private Map<String, Object> node(String nodeExecutionId, String nodeType, String name, String type, String status, String startTime, String endTime, String fileName, String side) {
+        Map<String, Object> n = new LinkedHashMap<>();
+        n.put("nodeExecutionId", nodeExecutionId); n.put("nodeType", nodeType); n.put("name", name); n.put("type", type); n.put("status", status); n.put("startTime", startTime); n.put("endTime", endTime); n.put("fileName", fileName); n.put("side", side); n.put("order", null); n.put("id", name);
+        return n;
+    }
+
+    private Map<String, Object> file(boolean running) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("fileName", running ? "NA_SL_0756_AccountBalance_20260605_042007.csv" : "AU_SL_3586_AccountBalance_20260320_123888.csv");
+        f.put("filePattern", running ? "NA_SL_0756_AccountBalance_[0-9]{6}.*" : "AU_SL_3586_AccountBalance_[0-9]{6}.*");
+        f.put("receivedTime", running ? "2026-06-12T12:23:58Z" : "2026-06-12T14:09:18.883738028Z");
+        f.put("entityKeys", List.of("a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p"));
+        f.put("completed", true);
+        return f;
+    }
+
+    private Map<String, Object> anomaly(String type, String severity, String stageType, String actual, String baseline, String evidence) {
+        Map<String, Object> a = new LinkedHashMap<>();
+        a.put("type", type); a.put("severity", severity); a.put("stageType", stageType); a.put("actual", actual); a.put("baseline", baseline); a.put("evidence", evidence);
+        return a;
+    }
+
+    private Map<String, Object> evidence(String source, String field, String value) {
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("source", source); e.put("field", field); e.put("value", value); return e;
+    }
+
+    private Map<String, Object> costStage(String stageType, double estimatedCost, int runtimeSec) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("stageType", stageType); c.put("estimatedCost", estimatedCost); c.put("runtimeSec", runtimeSec); return c;
+    }
+
+    private Map<String, Object> chart(String chartType, String title, List<?> x, List<Map<String, Object>> series, Map<String, Object> meta) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("chartType", chartType); c.put("title", title); c.put("x", x); c.put("series", series); c.put("meta", meta); return c;
+    }
+
+    private Map<String, Object> series(String name, List<?> data) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("name", name); s.put("data", data); return s;
+    }
+}
