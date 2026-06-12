@@ -1,0 +1,5 @@
+# Scenario 1: New unapproved/threat agent
+python ingestion/demo_agent_sender.py 9900 threat
+
+# Scenario 2: Known-tools auto-approved agent
+python ingestion/demo_agent_sender.py 9900 approved
