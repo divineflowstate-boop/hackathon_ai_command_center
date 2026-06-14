@@ -1,0 +1,155 @@
+API objective: Expose a getCostReport tool response that matches the existing UI contract exactly.
+Endpoint: POST /api/recon/ask
+The backend receives a natural language question such as:
+"Show cost"
+"What is driving cost?"
+"Show cost by recon"
+"Show cost anomalies"
+"Which recons are expensive today?"
+The backend should route cost-related questions to tool:
+getCostReport
+Response contract:
+{
+  "answer": "Human readable summary of cost drivers",
+  "userId": "user001",
+  "sessionId": "recon-demo-session",
+  "toolCalls": [
+    {
+      "toolName": "getCostReport",
+      "toolResponse": {
+        "result": {
+          "businessDate": "2026-06-14",
+          "generatedAt": "2026-06-14T10:30:00Z",
+          "currency": "USD",
+          "totalCost": 1248.72,
+          "costByStage": [],
+          "costByRecon": [],
+          "costAnomalies": [],
+          "charts": []
+        }
+      }
+    }
+  ]
+}
+Required result fields:
+businessDate: String
+generatedAt: String
+currency: String
+totalCost: BigDecimal
+costByStage: List<CostByStage>
+costByRecon: List<CostByRecon>
+costAnomalies: List<CostAnomaly>
+charts: List<ChartData>
+Cost by stage structure:
+{
+  "stage": "PRE_MATCH",
+  "cost": 184.22,
+  "percentage": 14.75,
+  "runCount": 8,
+  "avgCostPerRun": 23.03,
+  "driver": "Input normalization and validation"
+}
+Cost by recon structure:
+{
+  "reconId": "PELIX",
+  "reconName": "PELIX Securities Recon",
+  "status": "FAILED",
+  "owner": "Markets Ops",
+  "totalCost": 308.10,
+  "costRank": 1,
+  "percentageOfTotal": 24.67,
+  "costByStage": [
+    {
+      "stage": "PRE_MATCH",
+      "cost": 42.30
+    },
+    {
+      "stage": "MATCH",
+      "cost": 96.75
+    },
+    {
+      "stage": "POST_MATCH",
+      "cost": 121.40
+    },
+    {
+      "stage": "REPORTING",
+      "cost": 47.65
+    }
+  ],
+  "primaryDriver": "Post-match failure and checkpoint hold",
+  "trend": "UP",
+  "varianceVsBaseline": 34.8
+}
+Cost anomaly structure:
+{
+  "reconId": "PELIX",
+  "severity": "HIGH",
+  "type": "COST_SPIKE",
+  "stage": "POST_MATCH",
+  "actualCost": 121.40,
+  "baselineCost": 72.10,
+  "variancePercentage": 68.38,
+  "evidence": "Post-match stage cost is 68% above the 14-day baseline due to repeated checkpoint retries."
+}
+Chart structure:
+{
+  "chartType": "RECON_COST_DISTRIBUTION",
+  "title": "Cost by Recon",
+  "data": [
+    {
+      "label": "PELIX",
+      "value": 308.10
+    },
+    {
+      "label": "PB_MARGIN",
+      "value": 244.80
+    }
+  ]
+}
+Business logic:
+Return cost for all active recons for the business date, not just one recon.
+Calculate totalCost as the sum of all recon costs.
+Calculate percentageOfTotal for each recon.
+Rank recons by descending cost.
+Calculate stage-level cost totals across all recons.
+Identify anomalies where:
+actual cost is more than 30% above baseline, or
+a failed recon has unusually high cost, or
+retries/checkpoint holds increase cost materially.
+Generate a concise human-readable answer.
+Example answer: "Total estimated cost for today is $1,248.72 across 8 recons. PELIX is the highest cost driver at $308.10, contributing 24.7% of total cost. The main cost pressure is in POST_MATCH due to retry and checkpoint hold activity."
+Important UI compatibility rules:
+Keep toolName exactly as getCostReport.
+Keep data inside toolCalls[0].toolResponse.result.
+Do not rename costByRecon, costByStage, costAnomalies, or charts.
+Return empty arrays instead of null.
+Return answer even if no cost data is available.
+Never fail the full response because one recon has missing cost data.
+Use graceful fallback values.
+MVP mock data: Create 8 sample recons:
+PELIX
+PB_MARGIN
+INTL_CASH
+FX_SPOT
+EQ_SWAP
+COLLATERAL
+NOSTRO
+FEES_RECON
+Each recon should have:
+reconId
+reconName
+status
+owner
+totalCost
+costByStage
+primaryDriver
+trend
+varianceVsBaseline
+Acceptance criteria:
+Cost question returns toolName = getCostReport.
+UI can render all recons in the Cost Intelligence screen.
+costByRecon[] includes all 8 recons.
+costByStage[] includes aggregate stage-level costs.
+costAnomalies[] includes at least 2 meaningful anomalies.
+Response is valid JSON and follows the existing API contract.
+Missing or empty data does not break the UI.
